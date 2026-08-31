@@ -8,7 +8,7 @@ import {
 const GITHUB_API = 'https://api.github.com'
 
 function handbookRepo(): string {
-  return process.env.HANDBOOK_GITHUB_REPO ?? process.env.GITHUB_REPOSITORY ?? 'owner/handbook-helper'
+  return process.env.HANDBOOK_GITHUB_REPO ?? process.env.GITHUB_REPOSITORY ?? 'heoxide/handbook-helper'
 }
 
 export class AppUpdateService {
