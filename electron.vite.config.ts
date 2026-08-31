@@ -5,7 +5,6 @@ import react from '@vitejs/plugin-react'
 import { versionManifestPlugin } from './vite-plugins/version-manifest'
 
 const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf8'))
-const rendererOutDir = resolve(__dirname, 'out/renderer')
 
 export default defineConfig({
   main: {
@@ -27,7 +26,6 @@ export default defineConfig({
       react(),
       versionManifestPlugin({
         version: pkg.version,
-        outDir: rendererOutDir,
         buildId: process.env.GITHUB_SHA
       })
     ]

@@ -1,9 +1,11 @@
 import { createHash } from 'crypto'
-import { readFileSync, readdirSync, statSync, writeFileSync } from 'fs'
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'fs'
 import { join, relative } from 'path'
 import type { Plugin } from 'vite'
 
 function walkFiles(dir: string, root = dir): string[] {
+  if (!existsSync(dir)) return []
+
   const entries = readdirSync(dir)
   const files: string[] = []
 
@@ -27,7 +29,6 @@ function fingerprintFile(filePath: string): string {
 
 export function versionManifestPlugin(options: {
   version: string
-  outDir: string
   buildId?: string
 }): Plugin {
   const buildId = options.buildId ?? process.env.GITHUB_SHA?.slice(0, 12) ?? String(Date.now())
@@ -35,14 +36,18 @@ export function versionManifestPlugin(options: {
   return {
     name: 'handbook-version-manifest',
     apply: 'build',
-    closeBundle() {
-      const files = walkFiles(options.outDir)
-      const assets: Record<string, string> = {}
+    writeBundle(outputOptions) {
+      const outDir = outputOptions.dir
+      if (!outDir || !existsSync(outDir)) {
+        throw new Error(
+          `version-manifest: output directory not found (${outDir ?? 'undefined'})`
+        )
+      }
 
-      for (const file of files) {
+      const assets: Record<string, string> = {}
+      for (const file of walkFiles(outDir)) {
         if (file === 'version.json') continue
-        const fullPath = join(options.outDir, file)
-        assets[file] = fingerprintFile(fullPath)
+        assets[file] = fingerprintFile(join(outDir, file))
       }
 
       const manifest = {
@@ -52,7 +57,7 @@ export function versionManifestPlugin(options: {
         assets
       }
 
-      writeFileSync(join(options.outDir, 'version.json'), `${JSON.stringify(manifest, null, 2)}\n`)
+      writeFileSync(join(outDir, 'version.json'), `${JSON.stringify(manifest, null, 2)}\n`)
     }
   }
 }

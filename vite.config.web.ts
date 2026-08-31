@@ -7,8 +7,6 @@ import { versionManifestPlugin } from './vite-plugins/version-manifest'
 const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf8'))
 const repoName = process.env.GITHUB_REPOSITORY_NAME || 'handbook-helper'
 const base = process.env.GITHUB_PAGES === 'true' ? `/${repoName}/` : './'
-const outDir = resolve(__dirname, 'dist/web')
-
 export default defineConfig({
   root: resolve(__dirname, 'src/renderer'),
   base,
@@ -19,7 +17,6 @@ export default defineConfig({
     react(),
     versionManifestPlugin({
       version: pkg.version,
-      outDir,
       buildId: process.env.GITHUB_SHA
     })
   ],
@@ -29,7 +26,8 @@ export default defineConfig({
     }
   },
   build: {
-    outDir,
+    // Relative to Vite root (src/renderer) — absolute outDir breaks on CI with custom root
+    outDir: resolve(__dirname, 'dist/web'),
     emptyOutDir: true
   }
 })
