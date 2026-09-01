@@ -6,14 +6,15 @@ A cross-platform D&D 5e companion app for Windows and Mac, powered by [5e.tools]
 
 ## Download
 
-Pre-built installers are published on **[GitHub Releases](https://github.com/heoxide/handbook-helper/releases/latest)**.
+Installers are on **[GitHub Releases](https://github.com/heoxide/handbook-helper/releases/tag/v0.0.1)**.
 
 | Platform | Download | Notes |
 |----------|----------|-------|
 | **macOS** (Apple Silicon M1/M2/M3) | [Handbook Helper-0.0.1-arm64.dmg](https://github.com/heoxide/handbook-helper/releases/download/v0.0.1/Handbook%20Helper-0.0.1-arm64.dmg) | Open the `.dmg`, drag **Handbook Helper** to Applications. If macOS blocks the app, right-click → **Open**. |
-| **Windows** | [Handbook Helper Setup 0.0.1.exe](https://github.com/heoxide/handbook-helper/releases/download/v0.0.1/Handbook%20Helper%20Setup%200.0.1.exe) | Run the installer. A desktop shortcut is created automatically. |
+| **Windows** (installer) | [Handbook Helper Setup 0.0.1.exe](https://github.com/heoxide/handbook-helper/releases/download/v0.0.1/Handbook%20Helper%20Setup%200.0.1.exe) | Run the installer. A desktop shortcut is created automatically. |
+| **Windows** (portable) | [Handbook Helper 0.0.1.exe](https://github.com/heoxide/handbook-helper/releases/download/v0.0.1/Handbook%20Helper%200.0.1.exe) | No install — run directly. |
 
-Portable Windows build (no install): [Handbook Helper 0.0.1.exe](https://github.com/heoxide/handbook-helper/releases/download/v0.0.1/Handbook%20Helper%200.0.1.exe)
+If a direct link does not work, open the [v0.0.1 release page](https://github.com/heoxide/handbook-helper/releases/tag/v0.0.1) and download the file for your platform from **Assets**.
 
 > If this repository is **private**, only people with repo access can download from Releases. For other players, share the `.dmg` or `.exe` via Google Drive, Dropbox, or Discord.
 

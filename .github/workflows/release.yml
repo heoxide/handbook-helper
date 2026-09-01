@@ -59,7 +59,16 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: Prepare installer files only
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          find artifacts -type f -name '*.dmg' ! -name '*.blockmap' -exec cp {} release-assets/ \;
+          find artifacts -type f -name '*Setup*.exe' ! -name '*.blockmap' -exec cp {} release-assets/ \;
+          find artifacts -type f -name 'Handbook Helper *.exe' ! -name '*Setup*' ! -name '*.blockmap' -exec cp {} release-assets/ \;
+          ls -la release-assets/
+
       - uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**
+          files: release-assets/*
           generate_release_notes: true
