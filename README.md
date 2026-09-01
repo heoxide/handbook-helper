@@ -2,6 +2,21 @@
 
 A cross-platform D&D 5e companion app for Windows and Mac, powered by [5e.tools](https://5e.tools) data with incremental manifest-based syncing.
 
+**Current version: 0.0.1**
+
+## Download
+
+Pre-built installers are published on **[GitHub Releases](https://github.com/heoxide/handbook-helper/releases/latest)**.
+
+| Platform | Download | Notes |
+|----------|----------|-------|
+| **macOS** (Apple Silicon M1/M2/M3) | [Handbook Helper-0.0.1-arm64.dmg](https://github.com/heoxide/handbook-helper/releases/download/v0.0.1/Handbook%20Helper-0.0.1-arm64.dmg) | Open the `.dmg`, drag **Handbook Helper** to Applications. If macOS blocks the app, right-click → **Open**. |
+| **Windows** | [Handbook Helper Setup 0.0.1.exe](https://github.com/heoxide/handbook-helper/releases/download/v0.0.1/Handbook%20Helper%20Setup%200.0.1.exe) | Run the installer. A desktop shortcut is created automatically. |
+
+Portable Windows build (no install): [Handbook Helper 0.0.1.exe](https://github.com/heoxide/handbook-helper/releases/download/v0.0.1/Handbook%20Helper%200.0.1.exe)
+
+> If this repository is **private**, only people with repo access can download from Releases. For other players, share the `.dmg` or `.exe` via Google Drive, Dropbox, or Discord.
+
 ## Features
 
 - **Home** — Welcome hub with quick access to character creation and compendium
@@ -17,7 +32,9 @@ npm install
 npm run dev
 ```
 
-On first launch, the app automatically downloads 5e.tools data to your user data folder. You can also trigger sync manually via the Settings gear icon.
+On first launch, the app automatically downloads 5e.tools data to your user data folder. You can also trigger sync manually from **Settings**.
+
+Your characters and preferences stay on your device — app updates do not overwrite them.
 
 ## Data Sync
 
