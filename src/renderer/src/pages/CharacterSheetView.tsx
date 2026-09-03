@@ -7,7 +7,10 @@ import {
   Plus,
   X,
   ArrowUpCircle,
-  Sparkles
+  ArrowDownCircle,
+  Sparkles,
+  Minus,
+  ImagePlus
 } from 'lucide-react'
 import type { SavedCharacter } from '../../../shared/character'
 import {
@@ -39,6 +42,8 @@ import {
 import type { CharacterSheetState } from '../../../shared/character-sheet'
 import {
   buildInitialSheetState,
+  adjustHp,
+  setTempHp,
   classUsesKnownSpells,
   classUsesPreparedSpells,
   getCantripLimit,
@@ -51,6 +56,9 @@ import {
   spendSpellSlot,
   syncSheetWithLevel
 } from '../../../shared/character-sheet'
+import { applyLevelDown } from '../../../shared/level-down'
+import { getSubclasses } from '../../../shared/class-mechanics'
+import { SpellPickerModal } from '../components/SpellPickerModal'
 import {
   availableSlotLevels,
   getUpcastPreview
@@ -96,6 +104,11 @@ function resolveSheet(character: SavedCharacter): CharacterSheetState {
   return {
     ...base,
     ...saved,
+    hp: {
+      current: saved.hp?.current ?? base.hp.current,
+      max: saved.hp?.max ?? base.hp.max,
+      temp: saved.hp?.temp ?? 0
+    },
     spellSlots: saved.spellSlots ?? base.spellSlots,
     resourcePools: saved.resourcePools ?? base.resourcePools,
     cantrips: saved.cantrips ?? [],
@@ -137,8 +150,8 @@ export function CharacterSheetView({
   const [features, setFeatures] = useState<ClassFeatureEntry[]>([])
   const [classSpells, setClassSpells] = useState<SpellOption[]>([])
   const [optionalPool, setOptionalPool] = useState<Record<string, unknown>[]>([])
-  const [cantripPickerOpen, setCantripPickerOpen] = useState(false)
-  const [knownPickerOpen, setKnownPickerOpen] = useState(false)
+  const [cantripModalOpen, setCantripModalOpen] = useState(false)
+  const [knownModalOpen, setKnownModalOpen] = useState(false)
   const [prepareModalOpen, setPrepareModalOpen] = useState(false)
   const [castTarget, setCastTarget] = useState<EntityRef | null>(null)
   const [castSlotLevel, setCastSlotLevel] = useState<number>(1)
@@ -217,20 +230,7 @@ export function CharacterSheetView({
     if (!detail) return
     setClassDetail(detail)
     setSubclasses(
-      b.subclass
-        .filter(
-          (s) =>
-            s.className === character.class.name &&
-            s.classSource === character.class.source &&
-            !s._copy
-        )
-        .map((s) => ({
-          name: String(s.name),
-          shortName: String(s.shortName ?? s.name),
-          source: String(s.source),
-          className: String(s.className),
-          classSource: String(s.classSource)
-        }))
+      getSubclasses(b, character.class.name, character.class.source, character.enabledSources)
     )
 
     const initialSheet = hasSheetProgress(character.sheet)
@@ -379,6 +379,45 @@ export function CharacterSheetView({
   const handleShortRest = () => {
     const next = shortRest(sheet, effectiveClassDetail ?? undefined)
     void persist(character, next)
+  }
+
+  const handleLevelDown = async () => {
+    if (!bundle || !classDetail || character.level <= 1) return
+    const result = applyLevelDown(character, sheet, classDetail, bundle)
+    if (bundle && classDetail) {
+      const sub = result.character.subclass
+        ? {
+            name: result.character.subclass.name,
+            shortName: result.character.subclass.name,
+            source: result.character.subclass.source,
+            className: result.character.class.name,
+            classSource: result.character.class.source
+          }
+        : null
+      setFeatures(getFeaturesForLevel(bundle, classDetail, result.character.level, sub))
+    }
+    await persist(result.character, result.sheet)
+  }
+
+  const adjustGold = (deltaCp: number) => {
+    if (!character.inventory) return
+    const nextCp = Math.max(0, character.inventory.goldCp + deltaCp)
+    void persist(
+      { ...character, inventory: { ...character.inventory, goldCp: nextCp } },
+      sheet
+    )
+  }
+
+  const handlePortraitChange = (file: File | null) => {
+    if (!file) {
+      void persist({ ...character, portraitUrl: null }, sheet)
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      void persist({ ...character, portraitUrl: String(reader.result) }, sheet)
+    }
+    reader.readAsDataURL(file)
   }
 
   const handleLongRest = () => {
@@ -610,6 +649,20 @@ export function CharacterSheetView({
     <div className="sheet-root">
       <header className="sheet-header">
         <div className="sheet-identity">
+          <label className="sheet-portrait-btn" title="Add character portrait">
+            {character.portraitUrl ? (
+              <img src={character.portraitUrl} alt="" className="sheet-portrait" />
+            ) : (
+              <ImagePlus size={20} />
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              className="sheet-portrait-input"
+              onChange={(e) => handlePortraitChange(e.target.files?.[0] ?? null)}
+            />
+          </label>
+          <div>
           <h2>{character.name}</h2>
           <p className="sheet-subtitle">
             Level {character.level} {character.species.name} {character.class.name}
@@ -619,6 +672,7 @@ export function CharacterSheetView({
             {character.background.name} · PB +{pb}
             {saving ? ' · Saving…' : ''}
           </p>
+          </div>
         </div>
         <div className="sheet-header-actions">
           <button
@@ -629,6 +683,15 @@ export function CharacterSheetView({
             title={character.level >= 20 ? 'Maximum level reached' : 'Level up'}
           >
             <ArrowUpCircle size={16} /> Level Up
+          </button>
+          <button
+            type="button"
+            className="btn-secondary sheet-level-up-btn"
+            onClick={() => void handleLevelDown()}
+            disabled={character.level <= 1 || !classDetail || !bundle}
+            title="Level down"
+          >
+            <ArrowDownCircle size={16} /> Level Down
           </button>
           <button type="button" className="btn-secondary sheet-rest-btn" onClick={handleShortRest}>
             <Coffee size={14} /> Short Rest
@@ -655,11 +718,46 @@ export function CharacterSheetView({
             <section className="sheet-panel">
               <SheetPanelTitle>Combat</SheetPanelTitle>
               <div className="sheet-stat-row">
-                <div className="sheet-stat">
+                <div className="sheet-stat sheet-stat-hp">
                   <span className="label">HP</span>
-                  <span className="value">
-                    {sheet.hp.current}/{sheet.hp.max}
-                  </span>
+                  <div className="hp-controls">
+                    <button
+                      type="button"
+                      className="btn-icon"
+                      onClick={() => void persist(character, adjustHp(sheet, -1))}
+                      aria-label="Reduce HP"
+                    >
+                      <Minus size={14} />
+                    </button>
+                    <span className="value">
+                      {sheet.hp.current}/{sheet.hp.max}
+                      {(sheet.hp.temp ?? 0) > 0 ? ` +${sheet.hp.temp} temp` : ''}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn-icon"
+                      onClick={() => void persist(character, adjustHp(sheet, 1))}
+                      aria-label="Heal HP"
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                  <div className="temp-hp-row">
+                    <label htmlFor="temp-hp">Temp HP</label>
+                    <input
+                      id="temp-hp"
+                      type="number"
+                      min={0}
+                      className="temp-hp-input"
+                      value={sheet.hp.temp ?? 0}
+                      onChange={(e) =>
+                        void persist(
+                          character,
+                          setTempHp(sheet, Number(e.target.value) || 0)
+                        )
+                      }
+                    />
+                  </div>
                 </div>
                 <div className="sheet-stat">
                   <span className="label">AC</span>
@@ -680,6 +778,7 @@ export function CharacterSheetView({
                   </h4>
                   <div className="slot-grid">
                     {Object.entries(sheet.spellSlots)
+                      .filter(([, slot]) => slot.max > 0)
                       .sort(([a], [b]) => Number(a) - Number(b))
                       .map(([lvl, slot]) => (
                         <div key={lvl} className="slot-cell">
@@ -754,7 +853,7 @@ export function CharacterSheetView({
                         <button
                           type="button"
                           className="btn-secondary btn-sm"
-                          onClick={() => setCantripPickerOpen((o) => !o)}
+                          onClick={() => setCantripModalOpen(true)}
                         >
                           <Plus size={14} /> Add cantrips
                         </button>
@@ -772,7 +871,7 @@ export function CharacterSheetView({
                         <button
                           type="button"
                           className="btn-secondary btn-sm"
-                          onClick={() => setKnownPickerOpen((o) => !o)}
+                          onClick={() => setKnownModalOpen(true)}
                         >
                           <Plus size={14} /> Add spells
                         </button>
@@ -820,59 +919,6 @@ export function CharacterSheetView({
                     </>
                   )}
                 </p>
-              )}
-
-              {cantripPickerOpen && (
-                <div className="spell-picker">
-                  {castableClassSpells
-                    .filter((spell) => spell.level === 0)
-                    .map((spell) => (
-                      <div key={`c-${spell.name}|${spell.source}`} className="spell-picker-row">
-                        <span>{spell.name}</span>
-                        <div className="spell-picker-actions">
-                          <button
-                            type="button"
-                            className="btn-chip"
-                            onClick={() => toggleSpell(spell, 'cantrip')}
-                          >
-                            {sheet.cantrips.some(
-                              (s) => s.name === spell.name && s.source === spell.source
-                            )
-                              ? 'Remove'
-                              : 'Add'}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              )}
-
-              {knownPickerOpen && usesKnown && (
-                <div className="spell-picker">
-                  {castableClassSpells
-                    .filter((spell) => spell.level > 0)
-                    .map((spell) => (
-                      <div key={`k-${spell.name}|${spell.source}`} className="spell-picker-row">
-                        <span>
-                          {spell.name}{' '}
-                          <span className="muted">(Lv {spell.level})</span>
-                        </span>
-                        <div className="spell-picker-actions">
-                          <button
-                            type="button"
-                            className="btn-chip"
-                            onClick={() => toggleSpell(spell, 'known')}
-                          >
-                            {sheet.knownSpells.some(
-                              (s) => s.name === spell.name && s.source === spell.source
-                            )
-                              ? 'Remove'
-                              : 'Learn'}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                </div>
               )}
 
               {sheet.cantrips.length > 0 && (
@@ -1004,8 +1050,22 @@ export function CharacterSheetView({
                   ))}
                 </div>
               )}
-              {(character.inventory?.goldCp ?? 0) > 0 && (
-                <p className="sheet-hint">Gold: {character.inventory!.goldCp / 100} GP</p>
+              {(character.inventory?.goldCp ?? 0) >= 0 && (
+                <div className="gold-controls">
+                  <span>Gold: {(character.inventory?.goldCp ?? 0) / 100} GP</span>
+                  <button type="button" className="btn-chip" onClick={() => adjustGold(-100)}>
+                    −1 GP
+                  </button>
+                  <button type="button" className="btn-chip" onClick={() => adjustGold(100)}>
+                    +1 GP
+                  </button>
+                  <button type="button" className="btn-chip" onClick={() => adjustGold(-10)}>
+                    −10 CP
+                  </button>
+                  <button type="button" className="btn-chip" onClick={() => adjustGold(10)}>
+                    +10 CP
+                  </button>
+                </div>
               )}
             </section>
           ) : undefined,
@@ -1125,6 +1185,32 @@ export function CharacterSheetView({
           ) : undefined
         }}
       />
+
+      {cantripModalOpen && table && (
+        <SpellPickerModal
+          title="Add Cantrips"
+          hint={`${sheet.cantrips.length}/${getCantripLimit(table)} cantrips known`}
+          spells={castableClassSpells.filter((s) => s.level === 0)}
+          selected={sheet.cantrips}
+          limit={getCantripLimit(table)}
+          loading={classSpells.length === 0}
+          onToggle={(spell) => toggleSpell(spell, 'cantrip')}
+          onClose={() => setCantripModalOpen(false)}
+        />
+      )}
+
+      {knownModalOpen && table && usesKnown && (
+        <SpellPickerModal
+          title="Add Spells"
+          hint={`${sheet.knownSpells.length}/${getKnownLimit(table)} spells known · Up to level ${maxCastableSpellLevel}`}
+          spells={castableClassSpells.filter((s) => s.level > 0)}
+          selected={sheet.knownSpells}
+          limit={getKnownLimit(table)}
+          loading={classSpells.length === 0}
+          onToggle={(spell) => toggleSpell(spell, 'known')}
+          onClose={() => setKnownModalOpen(false)}
+        />
+      )}
 
       {prepareModalOpen && table && usesPrepared && (
         <PrepareSpellsModal

@@ -118,15 +118,81 @@ export function filterCreatorSpecies(
   return dedupeCreatorSpecies(filtered)
 }
 
+const CREATOR_FEAT_SOURCE_PRIORITY = [
+  'XPHB',
+  'XPHB2024',
+  'EFA',
+  'LFL',
+  'RHW',
+  'TCE',
+  'PHB'
+] as const
+
+function featSourceRank(source: string): number {
+  const idx = CREATOR_FEAT_SOURCE_PRIORITY.indexOf(
+    source as (typeof CREATOR_FEAT_SOURCE_PRIORITY)[number]
+  )
+  return idx === -1 ? CREATOR_FEAT_SOURCE_PRIORITY.length : idx
+}
+
+/** Keep one feat per name, preferring newer reprints. */
+export function dedupeCreatorFeats(entries: CompendiumEntry[]): CompendiumEntry[] {
+  const best = new Map<string, CompendiumEntry>()
+  for (const entry of entries) {
+    const key = entry.name.toLowerCase()
+    const prev = best.get(key)
+    if (!prev || featSourceRank(entry.source) < featSourceRank(prev.source)) {
+      best.set(key, entry)
+    }
+  }
+  return [...best.values()].sort(
+    (a, b) => a.name.localeCompare(b.name) || a.source.localeCompare(b.source)
+  )
+}
+
+export function filterFeatsForEdition(
+  entries: CompendiumEntry[],
+  edition: CreatorEdition
+): CompendiumEntry[] {
+  return entries.filter((e) => {
+    const modern = is2024Content(e)
+    if (edition === '2024') {
+      if (modern) return true
+      return e.source !== 'PHB'
+    }
+    return !modern
+  })
+}
+
 export function filterFeatsByCategory(
   entries: CompendiumEntry[],
   categories: string[],
-  codes: string[]
+  codes: string[],
+  edition?: CreatorEdition
 ): CompendiumEntry[] {
   const catSet = new Set(categories)
-  return entries.filter(
+  let filtered = entries.filter(
     (e) =>
       codes.includes(e.source) &&
       (e.featCategories ?? []).some((c) => catSet.has(c))
+  )
+  if (edition) {
+    filtered = filterFeatsForEdition(filtered, edition)
+    filtered = dedupeCreatorFeats(filtered)
+  }
+  return filtered
+}
+
+/** Feats for level-up / origin feat pickers. */
+export function filterCreatorFeats(
+  entries: CompendiumEntry[],
+  codes: string[],
+  edition: CreatorEdition
+): CompendiumEntry[] {
+  return dedupeCreatorFeats(
+    filterFeatsForEdition(
+      entries.filter((e) => codes.includes(e.source)),
+      edition
+    )
   )
 }

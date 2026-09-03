@@ -1,6 +1,6 @@
 {
   "name": "handbook-helper",
-  "version": "0.0.2",
+  "version": "0.0.4",
   "description": "D&D 5e companion app powered by 5e.tools data",
   "main": "out/main/index.js",
   "author": "Handbook Helper",

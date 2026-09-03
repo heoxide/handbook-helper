@@ -432,14 +432,17 @@ export interface ClassSpellSubclassRef {
 export function getSubclasses(
   bundle: ClassBundle,
   className: string,
-  classSource: string
+  classSource: string,
+  enabledSources?: string[]
 ): SubclassOption[] {
+  const enabled = enabledSources?.length ? new Set(enabledSources) : null
   return (bundle.subclass ?? [])
     .filter(
       (s) =>
         String(s.className) === className &&
         String(s.classSource) === classSource &&
-        !s._copy
+        !s._copy &&
+        (!enabled || enabled.has(String(s.source)))
     )
     .map((s) => ({
       name: String(s.name),

@@ -11,6 +11,7 @@ import {
   optionalFeatureMatchesTypes,
   resolveEffectiveClassDetail
 } from '../../../shared/class-mechanics'
+import { filterCreatorFeats } from '../../../shared/creator-filters'
 import {
   analyzeLevelUp,
   applyAsiToScores,
@@ -129,17 +130,31 @@ export function LevelUpModal({
   const [selectedFeat, setSelectedFeat] = useState<EntityRef | null>(null)
   const [pickedOptional, setPickedOptional] = useState<EntityRef[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [wizardStep, setWizardStep] = useState(0)
+
+  const wizardSteps = useMemo(() => {
+    const steps: string[] = ['Overview']
+    if (analysis.requiresSubclass) steps.push('Subclass')
+    if (analysis.normalFeatures.length > 0) steps.push('Features')
+    if (analysis.spellLimitChanges.length > 0 || analysis.spellSlotChanges.length > 0) {
+      steps.push('Spellcasting')
+    }
+    if (analysis.optionalFeatureGains.length > 0) steps.push('Optional')
+    if (needsProgressionChoice) steps.push('Progression')
+    steps.push('Confirm')
+    return steps
+  }, [analysis, needsProgressionChoice])
 
   useEffect(() => {
     if (!needsProgressionChoice) return
     void window.handbook.data.getFeats().then((feats) => {
-      const enabled = new Set(character.enabledSources ?? [])
-      const filtered = feats
-        .filter((f) => !enabled.size || enabled.has(f.source))
-        .map((f) => ({ name: f.name, source: f.source }))
+      const edition = character.creatorEdition ?? '2024'
+      const filtered = filterCreatorFeats(feats, character.enabledSources ?? [], edition).map(
+        (f) => ({ name: f.name, source: f.source })
+      )
       setFeatOptions(filtered)
     })
-  }, [needsProgressionChoice, character.enabledSources])
+  }, [needsProgressionChoice, character.enabledSources, character.creatorEdition])
 
   const filteredFeats = useMemo(() => {
     const q = featQuery.trim().toLowerCase()
@@ -147,8 +162,8 @@ export function LevelUpModal({
     if (analysis.epicBoonFeatures.length > 0) {
       list = list.filter((f) => f.name.toLowerCase().includes('boon'))
     }
-    if (!q) return list.slice(0, 40)
-    return list.filter((f) => f.name.toLowerCase().includes(q)).slice(0, 40)
+    if (!q) return list
+    return list.filter((f) => f.name.toLowerCase().includes(q))
   }, [featOptions, featQuery, analysis.epicBoonFeatures.length])
 
   const requiredOptionalPicks = analysis.optionalFeatureGains.reduce(
@@ -283,6 +298,20 @@ export function LevelUpModal({
         </div>
 
         <div className="level-up-body">
+          <div className="level-up-step-tabs">
+            {wizardSteps.map((label, idx) => (
+              <button
+                key={label}
+                type="button"
+                className={`level-up-step-tab ${wizardStep === idx ? 'active' : ''}`}
+                onClick={() => setWizardStep(idx)}
+              >
+                {idx + 1}. {label}
+              </button>
+            ))}
+          </div>
+
+          {(wizardSteps[wizardStep] === 'Overview' || wizardSteps[wizardStep] === 'Confirm') && (
           <section className="level-up-section">
             <h4>Core improvements</h4>
             <ul className="level-up-summary">
@@ -297,8 +326,9 @@ export function LevelUpModal({
               ) : null}
             </ul>
           </section>
+          )}
 
-          {analysis.requiresSubclass ? (
+          {wizardSteps[wizardStep] === 'Subclass' && analysis.requiresSubclass ? (
             <section className="level-up-section">
               <h4>Choose subclass</h4>
               <p className="sheet-hint">Your class gains its subclass at this level.</p>
@@ -317,7 +347,7 @@ export function LevelUpModal({
             </section>
           ) : null}
 
-          {analysis.normalFeatures.length > 0 ? (
+          {wizardSteps[wizardStep] === 'Features' && analysis.normalFeatures.length > 0 ? (
             <section className="level-up-section">
               <h4>New class features</h4>
               {analysis.normalFeatures.map((f) => (
@@ -326,7 +356,8 @@ export function LevelUpModal({
             </section>
           ) : null}
 
-          {analysis.spellLimitChanges.length > 0 || analysis.spellSlotChanges.length > 0 ? (
+          {wizardSteps[wizardStep] === 'Spellcasting' &&
+          (analysis.spellLimitChanges.length > 0 || analysis.spellSlotChanges.length > 0) ? (
             <section className="level-up-section">
               <h4>Spellcasting</h4>
               <ul className="level-up-summary">
@@ -343,8 +374,8 @@ export function LevelUpModal({
                 ))}
               </ul>
               <p className="sheet-hint">
-                After confirming, use <strong>Add spells</strong> on your sheet to pick new cantrips
-                or prepared spells.
+                After confirming, use <strong>Prepare spells</strong> or <strong>Add spells</strong>{' '}
+                on your sheet to pick new spells.
               </p>
             </section>
           ) : null}
@@ -362,7 +393,7 @@ export function LevelUpModal({
             </section>
           ) : null}
 
-          {analysis.optionalFeatureGains.length > 0 ? (
+          {wizardSteps[wizardStep] === 'Optional' && analysis.optionalFeatureGains.length > 0 ? (
             <section className="level-up-section">
               <h4>Optional features</h4>
               <p className="sheet-hint">
@@ -402,7 +433,7 @@ export function LevelUpModal({
             </section>
           ) : null}
 
-          {needsProgressionChoice ? (
+          {wizardSteps[wizardStep] === 'Progression' && needsProgressionChoice ? (
             <section className="level-up-section">
               <h4>
                 {analysis.epicBoonFeatures.length > 0
@@ -535,9 +566,20 @@ export function LevelUpModal({
           <button type="button" className="btn-secondary" onClick={onCancel}>
             Cancel
           </button>
+          {wizardStep > 0 ? (
+            <button type="button" className="btn-secondary" onClick={() => setWizardStep((s) => s - 1)}>
+              Back
+            </button>
+          ) : null}
+          {wizardStep < wizardSteps.length - 1 ? (
+            <button type="button" className="btn-primary" onClick={() => setWizardStep((s) => s + 1)}>
+              Next
+            </button>
+          ) : (
           <button type="button" className="btn-primary" onClick={handleConfirm}>
             Confirm level {analysis.toLevel}
           </button>
+          )}
         </div>
       </div>
     </div>

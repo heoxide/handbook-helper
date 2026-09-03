@@ -359,7 +359,8 @@ export function OriginFeatStep({
   step,
   navigateStep,
   canProceed,
-  onSelectionsChange
+  onSelectionsChange,
+  embedded = false
 }: {
   refs: BackgroundFeatRef[]
   selections: OriginFeatSelection[]
@@ -371,6 +372,7 @@ export function OriginFeatStep({
   navigateStep: (direction: 1 | -1) => void
   canProceed: boolean
   onSelectionsChange: (selections: OriginFeatSelection[]) => void
+  embedded?: boolean
 }) {
   const [spellOptions, setSpellOptions] = useState<{
     cantrips: CompendiumEntry[]
@@ -426,6 +428,22 @@ export function OriginFeatStep({
     onSelectionsChange(next)
   }
 
+  const panels = refs.map((ref) => (
+    <FeatChoicePanel
+      key={ref.id}
+      featRef={ref}
+      featDetail={ref.type === 'category' ? null : featDetails[ref.id] ?? null}
+      selection={selections.find((s) => s.refId === ref.id)}
+      categoryFeats={categoryFeats}
+      spellOptions={spellOptions}
+      onChange={updateSelection}
+    />
+  ))
+
+  if (embedded) {
+    return <div className="origin-feat-scroll">{panels}</div>
+  }
+
   if (!refs.length) {
     return (
       <div className="creator-card">
@@ -443,17 +461,7 @@ export function OriginFeatStep({
         <p>Configure the feat granted by your background. Some feats require additional choices.</p>
       </div>
       <div className="creator-card-scroll origin-feat-scroll">
-        {refs.map((ref) => (
-          <FeatChoicePanel
-            key={ref.id}
-            featRef={ref}
-            featDetail={ref.type === 'category' ? null : featDetails[ref.id] ?? null}
-            selection={selections.find((s) => s.refId === ref.id)}
-            categoryFeats={categoryFeats}
-            spellOptions={spellOptions}
-            onChange={updateSelection}
-          />
-        ))}
+        {panels}
       </div>
       <div className="creator-card-footer">
         <NavButtons step={step} navigateStep={navigateStep} canProceed={canProceed} />

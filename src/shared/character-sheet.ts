@@ -69,6 +69,7 @@ export function syncSheetWithLevel(
 
   const spellSlots: Record<number, SpellSlotState> = {}
   table.spellSlots.forEach((max, i) => {
+    if (max <= 0) return
     const lvl = i + 1
     const prev = sheet.spellSlots[lvl]
     spellSlots[lvl] = { max, used: prev ? Math.min(prev.used, max) : 0 }
@@ -169,7 +170,34 @@ export function longRest(
     resourcePools,
     concentration: null,
     arcanumUsed: [],
-    hp: { ...sheet.hp, current: sheet.hp.max }
+    hp: { ...sheet.hp, current: sheet.hp.max, temp: 0 }
+  }
+}
+
+export function adjustHp(
+  sheet: CharacterSheetState,
+  delta: number
+): CharacterSheetState {
+  const next = Math.max(0, Math.min(sheet.hp.max, sheet.hp.current + delta))
+  return { ...sheet, hp: { ...sheet.hp, current: next } }
+}
+
+export function setTempHp(sheet: CharacterSheetState, temp: number): CharacterSheetState {
+  return { ...sheet, hp: { ...sheet.hp, temp: Math.max(0, temp) } }
+}
+
+export function recoverSpellSlot(
+  sheet: CharacterSheetState,
+  level: number
+): CharacterSheetState | null {
+  const slot = sheet.spellSlots[level]
+  if (!slot || slot.used <= 0) return null
+  return {
+    ...sheet,
+    spellSlots: {
+      ...sheet.spellSlots,
+      [level]: { ...slot, used: slot.used - 1 }
+    }
   }
 }
 

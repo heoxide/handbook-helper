@@ -180,7 +180,7 @@ export interface ResourcePoolState {
 }
 
 export interface CharacterSheetState {
-  hp: { current: number; max: number }
+  hp: { current: number; max: number; temp?: number }
   spellSlots: Record<number, SpellSlotState>
   resourcePools: Record<string, ResourcePoolState>
   cantrips: EntityRef[]
@@ -198,6 +198,7 @@ export interface CharacterSheetState {
 import type { CreatorEdition, OriginFeatSelection } from './origin-feat'
 import { featGrantsTough, mergeFeatVersion } from './origin-feat'
 import type { StartingInventory } from './starting-equipment'
+import { parseProficiencyBlocks } from './proficiency-choices'
 
 export interface SavedCharacter {
   id: string
@@ -245,6 +246,7 @@ export interface SavedCharacter {
   passivePerception: number
   enabledSources: string[]
   inventory?: StartingInventory
+  portraitUrl?: string | null
   sheet?: CharacterSheetState
 }
 
@@ -259,26 +261,38 @@ export interface SavedCharacterSummary {
   updatedAt: string
 }
 
+function isAbilityKey(key: string): key is Ability {
+  return (ABILITIES as readonly string[]).includes(key)
+}
+
 export function getBackgroundAbilities(detail: Record<string, unknown>): Ability[] {
-  const ability = detail.ability as
-    | Array<{ choose?: { weighted?: { from?: string[] } } }>
-    | undefined
-  return (ability?.[0]?.choose?.weighted?.from ?? []) as Ability[]
+  const ability = detail.ability as unknown[] | undefined
+  if (!ability?.length) return []
+
+  for (const entry of ability) {
+    if (!entry || typeof entry !== 'object') continue
+    const choose = (entry as { choose?: Record<string, unknown> }).choose
+    if (!choose) continue
+
+    const weighted = choose.weighted as { from?: string[] } | undefined
+    if (weighted?.from?.length) {
+      return weighted.from.filter(isAbilityKey)
+    }
+
+    const from = choose.from as string[] | undefined
+    if (from?.length) {
+      return from.filter(isAbilityKey)
+    }
+  }
+
+  return []
 }
 
 export function parseNamedProficiencies(
   list: Array<Record<string, unknown>> | undefined
 ): string[] {
   if (!list?.length) return []
-  const result: string[] = []
-  for (const block of list) {
-    for (const key of Object.keys(block)) {
-      if (block[key] === true) {
-        result.push(key.replace(/\|.*$/, '').replace(/;.*$/, ''))
-      }
-    }
-  }
-  return result
+  return parseProficiencyBlocks(list).fixed
 }
 
 export function parseBackgroundFeat(detail: Record<string, unknown>): string {

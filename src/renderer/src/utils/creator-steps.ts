@@ -27,7 +27,7 @@ export function speciesAsiStepRequired(
   edition: CreatorEdition,
   speciesDetail: Record<string, unknown> | null | undefined
 ): boolean {
-  if (edition !== '2014' || !speciesDetail) return false
+  if (!speciesDetail) return false
   return speciesAsiHasChoices(parseSpeciesAbility(speciesDetail))
 }
 

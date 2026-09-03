@@ -52,6 +52,14 @@ import {
   filterCreatorSpecies,
   filterFeatsByCategory
 } from '../../../shared/creator-filters'
+import {
+  emptyProficiencyPicks,
+  parseProficiencyBlocks,
+  resolveProficiencyChoices,
+  validateProficiencyChoices,
+  type ProficiencyChoiceGroup
+} from '../../../shared/proficiency-choices'
+import { saveCreatorDraft, loadCreatorDraft, clearCreatorDraft } from '../utils/creator-draft-storage'
 import { EntryDescription } from '../components/EntryDescription'
 import { FluffImageGallery } from '../components/FluffImageGallery'
 import { OriginFeatStep } from '../components/OriginFeatStep'
@@ -91,6 +99,7 @@ import {
   getSpeciesAsiBonusForAbility,
   parseSpeciesAbility,
   speciesAsiHasBonuses,
+  speciesAsiHasChoices,
   validateSpeciesAsiPicks
 } from '../../../shared/species-asi'
 import { getSubclasses, type SubclassOption } from '../../../shared/class-mechanics'
@@ -141,6 +150,11 @@ interface CharacterDraft {
   originFeatSelections: OriginFeatSelection[]
   equipmentSelections: EquipmentSelections
   equipmentFilterPicks: EquipmentFilterPicks
+  backgroundSkillPicks: string[][]
+  speciesSkillPicks: string[][]
+  speciesFeatRefs: BackgroundFeatRef[]
+  speciesFeatDetails: Record<string, Record<string, unknown>>
+  speciesFeatSelections: OriginFeatSelection[]
 }
 
 function emptyRollAssign(): Record<Ability, number | null> {
@@ -193,7 +207,12 @@ function emptyDraft(): CharacterDraft {
     featDetails: {},
     originFeatSelections: [],
     equipmentSelections: {},
-    equipmentFilterPicks: {}
+    equipmentFilterPicks: {},
+    backgroundSkillPicks: [],
+    speciesSkillPicks: [],
+    speciesFeatRefs: [],
+    speciesFeatDetails: {},
+    speciesFeatSelections: []
   }
 }
 
@@ -598,17 +617,48 @@ function CreatorDetailPanel({
 }
 
 export function CharacterCreatorPage() {
-  const [step, setStep] = useState(0)
+  const storedDraft = loadCreatorDraft()
+  const [step, setStep] = useState(storedDraft?.step ?? 0)
   const [hasData, setHasData] = useState(false)
   const [allClasses, setAllClasses] = useState<CompendiumEntry[]>([])
   const [allBackgrounds, setAllBackgrounds] = useState<CompendiumEntry[]>([])
   const [allSpecies, setAllSpecies] = useState<CompendiumEntry[]>([])
   const [allFeats, setAllFeats] = useState<CompendiumEntry[]>([])
-  const [creatorEdition, setCreatorEdition] = useState<CreatorEdition>(loadEdition)
-  const [enabledBooks, setEnabledBooks] = useState<string[]>(() => loadEnabledBooks(loadEdition()))
-  const [draft, setDraft] = useState<CharacterDraft>(emptyDraft)
+  const [creatorEdition, setCreatorEdition] = useState<CreatorEdition>(
+    () => (storedDraft?.creatorEdition as CreatorEdition) ?? loadEdition()
+  )
+  const [enabledBooks, setEnabledBooks] = useState<string[]>(() =>
+    storedDraft?.enabledBooks ?? loadEnabledBooks(loadEdition())
+  )
+  const [draft, setDraft] = useState<CharacterDraft>(() => {
+    if (!storedDraft) return emptyDraft()
+    return {
+      ...emptyDraft(),
+      name: storedDraft.name,
+      classEntry: storedDraft.classEntry as CompendiumEntry | null,
+      subclassEntry: storedDraft.subclassEntry,
+      backgroundEntry: storedDraft.backgroundEntry as CompendiumEntry | null,
+      speciesEntry: storedDraft.speciesEntry as CompendiumEntry | null,
+      scoreMethod: storedDraft.scoreMethod as ScoreMethod,
+      baseScores: storedDraft.baseScores as Record<Ability, number>,
+      rolledPool: storedDraft.rolledPool,
+      rollAssign: storedDraft.rollAssign as Record<Ability, number | null>,
+      boostMode: storedDraft.boostMode as BackgroundBoostMode,
+      boostPlusTwo: (storedDraft.boostPlusTwo as Ability) ?? null,
+      boostPlusOne: (storedDraft.boostPlusOne as Ability) ?? null,
+      classSkills: storedDraft.classSkills,
+      expertiseSkills: storedDraft.expertiseSkills,
+      backgroundSkillPicks: storedDraft.backgroundSkillPicks,
+      speciesSkillPicks: storedDraft.speciesSkillPicks,
+      alignment: (storedDraft.alignment as Alignment) ?? null,
+      originFeatSelections: storedDraft.originFeatSelections as OriginFeatSelection[],
+      equipmentSelections: storedDraft.equipmentSelections as EquipmentSelections,
+      equipmentFilterPicks: storedDraft.equipmentFilterPicks as EquipmentFilterPicks,
+      speciesAsiPicks: storedDraft.speciesAsiPicks as Ability[][]
+    }
+  })
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
-  const [savedId, setSavedId] = useState<string | null>(null)
+  const [savedId, setSavedId] = useState<string | null>(storedDraft?.savedId ?? null)
 
   const sourceCodes = useMemo(() => enabledSourceCodes(enabledBooks), [enabledBooks])
   const availableBooks = useMemo(() => booksForEdition(creatorEdition), [creatorEdition])
@@ -627,10 +677,13 @@ export function CharacterCreatorPage() {
   )
 
   const categoryFeats = useMemo(() => {
-    const categories = draft.originFeatRefs.flatMap((r) => r.categories ?? [])
+    const categories = [
+      ...draft.originFeatRefs.flatMap((r) => r.categories ?? []),
+      ...draft.speciesFeatRefs.flatMap((r) => r.categories ?? [])
+    ]
     if (!categories.length) return []
-    return filterFeatsByCategory(allFeats, categories, sourceCodes)
-  }, [allFeats, draft.originFeatRefs, sourceCodes])
+    return filterFeatsByCategory(allFeats, categories, sourceCodes, creatorEdition)
+  }, [allFeats, draft.originFeatRefs, draft.speciesFeatRefs, sourceCodes, creatorEdition])
 
   useEffect(() => {
     localStorage.setItem(SOURCE_STORAGE_KEY, JSON.stringify(enabledBooks))
@@ -655,12 +708,78 @@ export function CharacterCreatorPage() {
     void window.handbook.data.getFeats().then(setAllFeats)
   }, [])
 
+  useEffect(() => {
+    void (async () => {
+      if (draft.classEntry && !draft.classDetail) {
+        const detail = await loadDetail('class', draft.classEntry)
+        const bundle = await window.handbook.data.getClassBundle(
+          draft.classEntry.name,
+          draft.classEntry.source
+        )
+        const subs = bundle
+          ? getSubclasses(bundle, draft.classEntry.name, draft.classEntry.source, sourceCodes)
+          : []
+        setDraft((d) => ({
+          ...d,
+          classDetail: detail,
+          availableSubclasses: subs
+        }))
+      }
+      if (draft.backgroundEntry && !draft.backgroundDetail) {
+        await selectBackground(draft.backgroundEntry)
+      }
+      if (draft.speciesEntry && !draft.speciesDetail) {
+        await selectSpecies(draft.speciesEntry)
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    saveCreatorDraft({
+      name: draft.name,
+      classEntry: draft.classEntry
+        ? { id: draft.classEntry.id, name: draft.classEntry.name, source: draft.classEntry.source }
+        : null,
+      subclassEntry: draft.subclassEntry,
+      backgroundEntry: draft.backgroundEntry
+        ? {
+            id: draft.backgroundEntry.id,
+            name: draft.backgroundEntry.name,
+            source: draft.backgroundEntry.source
+          }
+        : null,
+      speciesEntry: draft.speciesEntry
+        ? { id: draft.speciesEntry.id, name: draft.speciesEntry.name, source: draft.speciesEntry.source }
+        : null,
+      scoreMethod: draft.scoreMethod,
+      baseScores: draft.baseScores,
+      rolledPool: draft.rolledPool,
+      rollAssign: draft.rollAssign,
+      boostMode: draft.boostMode,
+      boostPlusTwo: draft.boostPlusTwo,
+      boostPlusOne: draft.boostPlusOne,
+      classSkills: draft.classSkills,
+      expertiseSkills: draft.expertiseSkills,
+      backgroundSkillPicks: draft.backgroundSkillPicks,
+      speciesSkillPicks: draft.speciesSkillPicks,
+      speciesLanguagePicks: [],
+      alignment: draft.alignment,
+      originFeatSelections: draft.originFeatSelections,
+      equipmentSelections: draft.equipmentSelections,
+      equipmentFilterPicks: draft.equipmentFilterPicks,
+      speciesAsiPicks: draft.speciesAsiPicks,
+      step,
+      creatorEdition,
+      enabledBooks,
+      savedId
+    })
+  }, [draft, step, creatorEdition, enabledBooks, savedId])
+
   const switchEdition = (edition: CreatorEdition) => {
     if (edition === creatorEdition) return
     setCreatorEdition(edition)
     setEnabledBooks(defaultBooksForEdition(edition))
-    setDraft(emptyDraft())
-    setStep(0)
     setSaveState('idle')
     setSavedId(null)
   }
@@ -674,10 +793,6 @@ export function CharacterCreatorPage() {
       }
       return [...prev, bookId]
     })
-    setDraft(emptyDraft())
-    setStep(0)
-    setSaveState('idle')
-    setSavedId(null)
   }
 
   const loadDetail = useCallback(async (type: string, entry: CompendiumEntry | null) => {
@@ -698,7 +813,7 @@ export function CharacterCreatorPage() {
   const selectClass = async (entry: CompendiumEntry) => {
     const detail = await loadDetail('class', entry)
     const bundle = await window.handbook.data.getClassBundle(entry.name, entry.source)
-    const subs = bundle ? getSubclasses(bundle, entry.name, entry.source) : []
+    const subs = bundle ? getSubclasses(bundle, entry.name, entry.source, sourceCodes) : []
     setDraft((d) => ({
       ...d,
       classEntry: entry,
@@ -724,9 +839,9 @@ export function CharacterCreatorPage() {
   const speciesAsiStepNeeded = speciesAsiStepRequired(creatorEdition, draft.speciesDetail)
 
   const speciesAsi = useMemo(() => {
-    if (creatorEdition !== '2014' || !draft.speciesDetail) return null
+    if (!draft.speciesDetail) return null
     return parseSpeciesAbility(draft.speciesDetail)
-  }, [creatorEdition, draft.speciesDetail])
+  }, [draft.speciesDetail])
 
   const navigateStep = useCallback(
     (direction: 1 | -1) => {
@@ -744,25 +859,29 @@ export function CharacterCreatorPage() {
   )
 
   const selectBackground = async (entry: CompendiumEntry) => {
+    const sameEntry = draft.backgroundEntry?.id === entry.id
     setDraft((d) => ({
       ...d,
       backgroundEntry: entry,
-      backgroundDetail: null,
-      originFeatRefs: [],
-      featDetails: {},
-      originFeatSelections: [],
-      equipmentSelections: {},
-      equipmentFilterPicks: {}
+      backgroundDetail: sameEntry ? d.backgroundDetail : null,
+      ...(sameEntry
+        ? {}
+        : {
+            originFeatRefs: [],
+            featDetails: {},
+            originFeatSelections: [],
+            equipmentSelections: {},
+            equipmentFilterPicks: {}
+          })
     }))
 
     try {
       const detail = await loadDetail('background', entry)
       const options = detail ? getBackgroundAbilities(detail) : []
-      const bgSkills = detail
-        ? parseNamedProficiencies(
-            (detail.skillProficiencies ?? detail.skillProf) as never
-          )
-        : []
+      const bgSkillBlocks = parseProficiencyBlocks(
+        (detail?.skillProficiencies ?? detail?.skillProf) as never
+      )
+      const bgSkills = bgSkillBlocks.fixed
       const refs = detail ? parseBackgroundFeatRefs(detail) : []
       const featDetails: Record<string, Record<string, unknown>> = {}
       const originFeatSelections: OriginFeatSelection[] = []
@@ -804,6 +923,9 @@ export function CharacterCreatorPage() {
         boostPlusTwo: options[0] ?? null,
         boostPlusOne: options[1] ?? options[0] ?? null,
         classSkills: d.classSkills.filter((s) => !isSkillInList(s, bgSkills)),
+        backgroundSkillPicks: sameEntry
+          ? d.backgroundSkillPicks
+          : emptyProficiencyPicks(bgSkillBlocks.choices),
         originFeatRefs: refs,
         featDetails,
         originFeatSelections
@@ -816,12 +938,55 @@ export function CharacterCreatorPage() {
 
   const selectSpecies = async (entry: CompendiumEntry) => {
     const detail = await loadDetail('race', entry)
-    const asi = detail && creatorEdition === '2014' ? parseSpeciesAbility(detail) : null
+    const asi = detail ? parseSpeciesAbility(detail) : null
+    const speciesSkillBlocks = parseProficiencyBlocks(
+      (detail?.skillProficiencies ?? detail?.skillProf) as never
+    )
+    const refs = detail ? parseBackgroundFeatRefs(detail) : []
+    const speciesFeatDetails: Record<string, Record<string, unknown>> = {}
+    const speciesFeatSelections: OriginFeatSelection[] = []
+
+    for (const ref of refs) {
+      if (ref.type === 'category') {
+        speciesFeatSelections.push({
+          refId: ref.id,
+          name: ref.name,
+          source: ref.source,
+          choices: { skills: [], tools: [], languages: [], weapons: [] }
+        })
+        continue
+      }
+      const featDetail = await loadNamedDetail('feat', ref.name, ref.source)
+      if (featDetail) {
+        speciesFeatDetails[ref.id] = featDetail
+        const grants = autoGrantFromFeat(featDetail, ref.variant)
+        speciesFeatSelections.push({
+          refId: ref.id,
+          name: ref.name,
+          source: ref.source,
+          variant: ref.variant,
+          choices: {
+            skills: [],
+            tools: [],
+            languages: grants.languages ?? [],
+            weapons: grants.weapons ?? []
+          }
+        })
+      }
+    }
+
     setDraft((d) => ({
       ...d,
       speciesEntry: entry,
       speciesDetail: detail,
-      speciesAsiPicks: asi ? emptySpeciesAsiPicks(asi) : []
+      speciesAsiPicks: asi ? emptySpeciesAsiPicks(asi) : [],
+      speciesSkillPicks: emptyProficiencyPicks(speciesSkillBlocks.choices),
+      speciesFeatRefs: refs,
+      speciesFeatDetails,
+      speciesFeatSelections,
+      classSkills: d.classSkills.filter(
+        (s) => !isSkillInList(s, speciesSkillBlocks.fixed)
+      )
     }))
   }
 
@@ -848,7 +1013,7 @@ export function CharacterCreatorPage() {
         draft.boostPlusOne ?? undefined
       )
     }
-    if (creatorEdition === '2014' && speciesAsi) {
+    if (speciesAsi && speciesAsiHasBonuses(speciesAsi)) {
       scores = applySpeciesAsi(scores, speciesAsi, draft.speciesAsiPicks)
     }
     return scores
@@ -868,12 +1033,40 @@ export function CharacterCreatorPage() {
     [draft.classDetail]
   )
 
-  const backgroundSkills = useMemo(
+  const backgroundSkillBlocks = useMemo(
     () =>
-      parseNamedProficiencies(
+      parseProficiencyBlocks(
         (draft.backgroundDetail?.skillProficiencies ?? draft.backgroundDetail?.skillProf) as never
       ),
     [draft.backgroundDetail]
+  )
+
+  const speciesSkillBlocks = useMemo(
+    () =>
+      parseProficiencyBlocks(
+        (draft.speciesDetail?.skillProficiencies ?? draft.speciesDetail?.skillProf) as never
+      ),
+    [draft.speciesDetail]
+  )
+
+  const backgroundSkills = useMemo(
+    () =>
+      resolveProficiencyChoices(
+        backgroundSkillBlocks.fixed,
+        backgroundSkillBlocks.choices,
+        draft.backgroundSkillPicks
+      ),
+    [backgroundSkillBlocks, draft.backgroundSkillPicks]
+  )
+
+  const speciesSkills = useMemo(
+    () =>
+      resolveProficiencyChoices(
+        speciesSkillBlocks.fixed,
+        speciesSkillBlocks.choices,
+        draft.speciesSkillPicks
+      ),
+    [speciesSkillBlocks, draft.speciesSkillPicks]
   )
 
   const backgroundTools = useMemo(
@@ -885,8 +1078,19 @@ export function CharacterCreatorPage() {
   )
 
   const mergedProficiencies = useMemo(
-    () => mergeFeatProficiencies(backgroundSkills, backgroundTools, draft.originFeatSelections),
-    [backgroundSkills, backgroundTools, draft.originFeatSelections]
+    () =>
+      mergeFeatProficiencies(
+        [...backgroundSkills, ...speciesSkills],
+        backgroundTools,
+        [...draft.originFeatSelections, ...draft.speciesFeatSelections]
+      ),
+    [
+      backgroundSkills,
+      speciesSkills,
+      backgroundTools,
+      draft.originFeatSelections,
+      draft.speciesFeatSelections
+    ]
   )
 
   const allBackgroundSkills = mergedProficiencies.skills
@@ -1120,6 +1324,19 @@ export function CharacterCreatorPage() {
         })
       }
       case CREATOR_STEP.SPECIES:
+        if (draft.speciesFeatRefs.length) {
+          const speciesFeatsOk = draft.speciesFeatRefs.every((ref) => {
+            const sel = draft.speciesFeatSelections.find((s) => s.refId === ref.id)
+            if (!sel) return false
+            if (ref.type === 'category') {
+              return isOriginFeatComplete([{ kind: 'category-feat' }], sel.choices, ref)
+            }
+            const detail = draft.speciesFeatDetails[ref.id]
+            if (!detail) return false
+            return isOriginFeatComplete(analyzeFeatChoices(detail, ref.variant), sel.choices, ref)
+          })
+          if (!speciesFeatsOk) return false
+        }
         return !!draft.speciesEntry
       case CREATOR_STEP.SPECIES_ASI:
         return speciesAsi ? validateSpeciesAsiPicks(speciesAsi, draft.speciesAsiPicks) : true
@@ -1147,11 +1364,23 @@ export function CharacterCreatorPage() {
         ) {
           return false
         }
+        if (
+          creatorEdition === '2024' &&
+          backgroundAbilities.length > 0 &&
+          draft.boostMode === 'all-one'
+        ) {
+          return true
+        }
         return true
       case CREATOR_STEP.SKILLS: {
+        const bgOk = validateProficiencyChoices(
+          backgroundSkillBlocks.choices,
+          draft.backgroundSkillPicks
+        )
+        const spOk = validateProficiencyChoices(speciesSkillBlocks.choices, draft.speciesSkillPicks)
         const classOk = !classSkillChoice || draft.classSkills.length === classSkillChoice.count
         const expOk = !expertiseCount || draft.expertiseSkills.length === expertiseCount
-        return classOk && expOk
+        return bgOk && spOk && classOk && expOk
       }
       case CREATOR_STEP.ALIGNMENT:
         return !!draft.alignment
@@ -1183,8 +1412,8 @@ export function CharacterCreatorPage() {
       backgroundEntry: { name: draft.backgroundEntry.name, source: draft.backgroundEntry.source },
       speciesEntry: { name: draft.speciesEntry.name, source: draft.speciesEntry.source },
       originFeat: originFeatLabel,
-      originFeatSelections: draft.originFeatSelections,
-      originFeatDetails: draft.featDetails,
+      originFeatSelections: [...draft.originFeatSelections, ...draft.speciesFeatSelections],
+      originFeatDetails: { ...draft.featDetails, ...draft.speciesFeatDetails },
       scoreMethod: draft.scoreMethod,
       baseScores: effectiveBaseScores,
       finalScores,
@@ -1212,6 +1441,7 @@ export function CharacterCreatorPage() {
     const saved = await window.handbook.characters.save(character)
     setSavedId(saved.id)
     setSaveState('saved')
+    clearCreatorDraft()
     sessionStorage.setItem('handbook-select-character', saved.id)
   }
 
@@ -1380,6 +1610,7 @@ export function CharacterCreatorPage() {
       )}
 
       {step === CREATOR_STEP.SPECIES && (
+        <>
         <PickerStep
           title="Step 5: Choose Species"
           description={
@@ -1423,6 +1654,28 @@ export function CharacterCreatorPage() {
           navigateStep={navigateStep}
           canProceed={canProceed()}
         />
+        {draft.speciesEntry && draft.speciesFeatRefs.length > 0 ? (
+          <div className="creator-card species-feat-card">
+            <h3>Species Feat Choices</h3>
+            <OriginFeatStep
+              refs={draft.speciesFeatRefs}
+              selections={draft.speciesFeatSelections}
+              featDetails={draft.speciesFeatDetails}
+              categoryFeats={categoryFeats}
+              sourceCodes={sourceCodes}
+              creatorEdition={creatorEdition}
+              step={step}
+              navigateStep={navigateStep}
+              canProceed={canProceed()}
+              embedded
+              onSelectionsChange={(speciesFeatSelections) =>
+                setDraft((d) => ({ ...d, speciesFeatSelections }))
+              }
+            />
+            <NavButtons step={step} navigateStep={navigateStep} canProceed={canProceed()} />
+          </div>
+        ) : null}
+        </>
       )}
 
       {step === CREATOR_STEP.SPECIES_ASI && speciesAsi && (
@@ -1684,6 +1937,52 @@ export function CharacterCreatorPage() {
       {step === CREATOR_STEP.SKILLS && (
         <div className="creator-card">
           <h2>Step 7: Skill Proficiencies</h2>
+          {backgroundSkillBlocks.choices.map((group, blockIdx) => (
+            <ProficiencyChoiceSection
+              key={`bg-${blockIdx}`}
+              label={`Background skill choice (${group.count})`}
+              group={group}
+              picks={draft.backgroundSkillPicks[blockIdx] ?? []}
+              blocked={allBackgroundSkills}
+              onPick={(pickIdx, skill) =>
+                setDraft((d) => {
+                  const next = d.backgroundSkillPicks.map((block) => [...block])
+                  while (next.length <= blockIdx) next.push([])
+                  const block = [...(next[blockIdx] ?? [])]
+                  block[pickIdx] = skill
+                  next[blockIdx] = block
+                  return {
+                    ...d,
+                    backgroundSkillPicks: next,
+                    classSkills: d.classSkills.filter((s) => !isSkillInList(s, [skill]))
+                  }
+                })
+              }
+            />
+          ))}
+          {speciesSkillBlocks.choices.map((group, blockIdx) => (
+            <ProficiencyChoiceSection
+              key={`sp-${blockIdx}`}
+              label={`Species skill choice (${group.count})`}
+              group={group}
+              picks={draft.speciesSkillPicks[blockIdx] ?? []}
+              blocked={allBackgroundSkills}
+              onPick={(pickIdx, skill) =>
+                setDraft((d) => {
+                  const next = d.speciesSkillPicks.map((block) => [...block])
+                  while (next.length <= blockIdx) next.push([])
+                  const block = [...(next[blockIdx] ?? [])]
+                  block[pickIdx] = skill
+                  next[blockIdx] = block
+                  return {
+                    ...d,
+                    speciesSkillPicks: next,
+                    classSkills: d.classSkills.filter((s) => !isSkillInList(s, [skill]))
+                  }
+                })
+              }
+            />
+          ))}
           {allBackgroundSkills.length > 0 && (
             <div className="chip-row">
               <span className="chip-label">From background &amp; feats (locked):</span>
@@ -1898,6 +2197,56 @@ export function CharacterCreatorPage() {
             detail={draft.speciesDetail}
           />
         )}
+      </div>
+    </div>
+  )
+}
+
+function ProficiencyChoiceSection({
+  label,
+  group,
+  picks,
+  blocked,
+  onPick
+}: {
+  label: string
+  group: ProficiencyChoiceGroup
+  picks: string[]
+  blocked: string[]
+  onPick: (pickIdx: number, skill: string) => void
+}) {
+  return (
+    <div className="boost-section">
+      <h3>{label}</h3>
+      <div className="skill-grid">
+        {Array.from({ length: group.count }).map((_, pickIdx) => {
+          const selected = picks[pickIdx]
+          const usedInGroup = new Set(picks.filter((_, i) => i !== pickIdx))
+          return (
+            <div key={pickIdx} className="picker-group">
+              <label>Pick {pickIdx + 1}</label>
+              <select
+                value={selected ?? ''}
+                onChange={(e) => {
+                  if (e.target.value) onPick(pickIdx, e.target.value)
+                }}
+              >
+                <option value="">Select skill…</option>
+                {group.from
+                  .filter(
+                    (skill) =>
+                      (!usedInGroup.has(skill) || skill === selected) &&
+                      !blocked.some((b) => isSkillInList(skill, [b]) && b !== selected)
+                  )
+                  .map((skill) => (
+                    <option key={skill} value={skill}>
+                      {formatSkillName(skill)}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
