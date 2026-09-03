@@ -6,12 +6,15 @@ $version = $package.version
 $productName = 'Handbook Helper'
 
 $releaseDir = Join-Path $root 'release'
-$portableExe = Join-Path $releaseDir "$productName $version.exe"
+$portableExe = Join-Path $releaseDir 'Handbook-Helper-Portable.exe'
+$legacyPortableExe = Join-Path $releaseDir "$productName $version.exe"
 $unpackedExe = Join-Path (Join-Path $releaseDir 'win-unpacked') "$productName.exe"
 $installedExe = Join-Path (Join-Path $env:LOCALAPPDATA "Programs\$productName") "$productName.exe"
 
 if (Test-Path $portableExe) {
   $target = $portableExe
+} elseif (Test-Path $legacyPortableExe) {
+  $target = $legacyPortableExe
 } elseif (Test-Path $unpackedExe) {
   $target = $unpackedExe
 } elseif (Test-Path $installedExe) {

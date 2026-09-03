@@ -2,19 +2,30 @@
 
 A cross-platform D&D 5e companion app for Windows and Mac, powered by [5e.tools](https://5e.tools) data with incremental manifest-based syncing.
 
-**Current version: 0.0.1**
+**Latest release:** [github.com/heoxide/handbook-helper/releases/latest](https://github.com/heoxide/handbook-helper/releases/latest)
 
 ## Download
 
-Installers are on **[GitHub Releases](https://github.com/heoxide/handbook-helper/releases/tag/v0.0.1)**.
+These links always point at the **newest** [GitHub Release](https://github.com/heoxide/handbook-helper/releases/latest). When you publish a new version (new git tag), the same links download the latest build — no README edit needed.
 
 | Platform | Download | Notes |
 |----------|----------|-------|
-| **macOS** (Apple Silicon M1/M2/M3) | [Handbook Helper-0.0.1-arm64.dmg](https://github.com/heoxide/handbook-helper/releases/download/v0.0.1/Handbook%20Helper-0.0.1-arm64.dmg) | Open the `.dmg`, drag **Handbook Helper** to Applications. If macOS blocks the app, right-click → **Open**. |
-| **Windows** (installer) | [Handbook Helper Setup 0.0.1.exe](https://github.com/heoxide/handbook-helper/releases/download/v0.0.1/Handbook%20Helper%20Setup%200.0.1.exe) | Run the installer. A desktop shortcut is created automatically. |
-| **Windows** (portable) | [Handbook Helper 0.0.1.exe](https://github.com/heoxide/handbook-helper/releases/download/v0.0.1/Handbook%20Helper%200.0.1.exe) | No install — run directly. |
+| **macOS** (Apple Silicon M1/M2/M3) | [Handbook-Helper-mac-arm64.dmg](https://github.com/heoxide/handbook-helper/releases/latest/download/Handbook-Helper-mac-arm64.dmg) | Open the `.dmg`, drag **Handbook Helper** to Applications. If macOS blocks the app, right-click → **Open**. |
+| **Windows** (installer) | [Handbook-Helper-Setup.exe](https://github.com/heoxide/handbook-helper/releases/latest/download/Handbook-Helper-Setup.exe) | Run the installer. A desktop shortcut is created automatically. |
+| **Windows** (portable) | [Handbook-Helper-Portable.exe](https://github.com/heoxide/handbook-helper/releases/latest/download/Handbook-Helper-Portable.exe) | No install — run directly. |
 
-If a direct link does not work, open the [v0.0.1 release page](https://github.com/heoxide/handbook-helper/releases/tag/v0.0.1) and download the file for your platform from **Assets**.
+If a direct link fails, open the [latest release page](https://github.com/heoxide/handbook-helper/releases/latest) and pick the file from **Assets**.
+
+### Publishing a new version (for maintainers)
+
+1. Bump `version` in `package.json`
+2. Commit and push to `main`
+3. Create and push a tag (example for `0.0.2`):
+   ```bash
+   git tag v0.0.2
+   git push origin v0.0.2
+   ```
+4. Wait for the **Build Release** workflow to finish — it uploads installers with the fixed names above
 
 > If this repository is **private**, only people with repo access can download from Releases. For other players, share the `.dmg` or `.exe` via Google Drive, Dropbox, or Discord.
 

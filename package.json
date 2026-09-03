@@ -43,6 +43,7 @@
     ],
     "mac": {
       "category": "public.app-category.games",
+      "artifactName": "Handbook-Helper-mac-${arch}.${ext}",
       "target": [
         "dmg",
         "zip"
@@ -55,11 +56,15 @@
       ]
     },
     "nsis": {
+      "artifactName": "Handbook-Helper-Setup.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
       "shortcutName": "Handbook Helper"
+    },
+    "portable": {
+      "artifactName": "Handbook-Helper-Portable.${ext}"
     }
   }
 }
